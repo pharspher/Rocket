@@ -13,7 +13,10 @@ import android.content.ServiceConnection;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.Process;
 import android.os.RemoteException;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -22,7 +25,6 @@ import android.support.v4.view.PagerAdapter;
 import android.support.v4.view.ViewPager;
 import android.support.v7.widget.PopupMenu;
 import android.support.v7.widget.RecyclerView;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
@@ -35,7 +37,8 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.widget.TextView;
 
-import com.example.lchuang.activitypager.IPagerService;
+import com.google.android.libraries.launcherclient.ILauncherOverlay;
+import com.google.android.libraries.launcherclient.ILauncherOverlayCallback;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -86,6 +89,10 @@ public class HomeFragment extends LocaleAwareFragment implements TopSitesContrac
 
     private final TabsChromeListener tabsChromeListener = new TabsChromeListener();
 
+    private ILauncherOverlay overlay;
+    private boolean hasLeftContent = true;
+    private int pageSelected;
+
     public static HomeFragment create() {
         HomeFragment fragment = new HomeFragment();
         return fragment;
@@ -106,61 +113,107 @@ public class HomeFragment extends LocaleAwareFragment implements TopSitesContrac
             return;
         }
 
-        Intent pagerIntent = new Intent("com.example.lchuang.activitypager.PagerService");
-        pagerIntent.setPackage("com.example.lchuang.activitypager");
+        connectOverlayService(activity);
+    }
+
+    private void connectOverlayService(Activity activity) {
+        Uri uri = Uri.parse("app://" + getContext().getPackageName() + ":" + Process.myUid())
+                .buildUpon().appendQueryParameter("v", Integer.toString(5))
+                .build();
+
+        Intent pagerIntent = new Intent("com.android.launcher3.WINDOW_OVERLAY");
+        pagerIntent.setPackage("com.google.android.googlequicksearchbox");
+        pagerIntent.setData(uri);
         activity.bindService(pagerIntent, new ServiceConnection() {
             @Override
             public void onServiceConnected(ComponentName name, IBinder binder) {
-                Log.d("roger_tag", "connected!");
-                hasLeftContent = true;
+                overlay = ILauncherOverlay.Stub.asInterface(binder);
                 try {
-                    final IPagerService service = IPagerService.Stub.asInterface((IBinder) binder);
-                    service.attachWindow(activity.getWindow().getAttributes());
+                    Bundle bundle = new Bundle();
+                    bundle.putParcelable("layout_params", getActivity().getWindow().getAttributes());
+                    bundle.putParcelable("configuration", getActivity().getResources().getConfiguration());
+                    bundle.putInt("client_options", 3);
+                    overlay.windowAttached2(bundle, new ILauncherOverlayCallback.Stub() {
 
-                    pager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
                         @Override
-                        public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
-                            Log.d("roger_tag", "position: " + position + ", piex.: " + positionOffsetPixels);
-                            if (position != 1) {
-                                try {
-                                    service.scrollTo(-positionOffsetPixels);
-                                } catch (RemoteException e) {
-                                    e.printStackTrace();
-                                }
+                        public void overlayScrollChanged(float progress) throws RemoteException {
+                            if (pageSelected == 0) {
+                                pager.beginFakeDrag();
+                                pager.fakeDragBy(-progress * 1440);
+                                pager.endFakeDrag();
                             }
                         }
 
                         @Override
-                        public void onPageSelected(int position) {
-
-                        }
-
-                        @Override
-                        public void onPageScrollStateChanged(int state) {
-                            if (state == ViewPager.SCROLL_STATE_IDLE) {
-                                try {
-                                    service.stopScroll();
-                                } catch (RemoteException e) {
-                                    e.printStackTrace();
-                                }
-                            } else if (state == ViewPager.SCROLL_STATE_DRAGGING || state == ViewPager.SCROLL_STATE_SETTLING) {
-                                try {
-                                    service.startScroll();
-                                } catch (RemoteException e) {
-                                    e.printStackTrace();
-                                }
-                            }
+                        public void overlayStatusChanged(int status) throws RemoteException {
                         }
                     });
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                try {
+                    overlay.setActivityState(2);
                 } catch (RemoteException e) {
                     e.printStackTrace();
                 }
+                try {
+                    overlay.onResume();
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+
+                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            overlay.onScroll(0f);
+                        } catch (RemoteException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }, 500);
+
+                pager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+                    @Override
+                    public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
+                        if (position != 1) {
+                            try {
+                                overlay.onScroll(1 - positionOffset);
+                            } catch (RemoteException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onPageSelected(int position) {
+
+                    }
+
+                    @Override
+                    public void onPageScrollStateChanged(int state) {
+                        if (state == ViewPager.SCROLL_STATE_IDLE) {
+                            pageSelected = pager.getCurrentItem();
+                            try {
+                                overlay.endScroll();
+                            } catch (RemoteException e) {
+                                e.printStackTrace();
+                            }
+                        } else if (state == ViewPager.SCROLL_STATE_DRAGGING || state == ViewPager.SCROLL_STATE_SETTLING) {
+
+                            try {
+                                overlay.startScroll();
+                            } catch (RemoteException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                });
             }
 
             @Override
             public void onServiceDisconnected(ComponentName name) {
-                pager.setCurrentItem(1);
-                hasLeftContent = false;
+                overlay = null;
             }
         }, Context.BIND_AUTO_CREATE);
     }
@@ -233,8 +286,6 @@ public class HomeFragment extends LocaleAwareFragment implements TopSitesContrac
 
         return pager;
     }
-
-    private boolean hasLeftContent = false;
 
     private static class BackForwardAdapter extends PagerAdapter {
         private View prev;
