@@ -28,7 +28,12 @@
             android:screenOrientation="portrait"
             android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize|locale|layoutDirection|smallestScreenSize|screenLayout"
             android:launchMode="singleTask"
-            android:exported="true" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.mozilla.focus.launch_page"/>
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <activity-alias
             android:name="org.mozilla.rocket.activity.MainActivity"

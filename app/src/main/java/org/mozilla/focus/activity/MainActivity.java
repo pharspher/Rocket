@@ -8,13 +8,17 @@ package org.mozilla.focus.activity;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.RemoteException;
 import android.preference.PreferenceManager;
 import android.support.annotation.CheckResult;
 import android.support.annotation.NonNull;
@@ -30,9 +34,13 @@ import android.support.v4.app.NotificationManagerCompat;
 import android.support.v4.content.LocalBroadcastManager;
 import android.support.v4.content.pm.ShortcutManagerCompat;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
+
+import com.example.lchuang.activitypager.IPageCallback;
+import com.example.lchuang.activitypager.IPagerService;
 
 import org.mozilla.focus.R;
 import org.mozilla.focus.download.DownloadInfo;
@@ -153,6 +161,8 @@ public class MainActivity extends LocaleAwareAppCompatActivity implements Fragme
             sIsNewCreated = false;
             runPromotion(intent);
         }
+
+
     }
 
     private void initBroadcastReceivers() {

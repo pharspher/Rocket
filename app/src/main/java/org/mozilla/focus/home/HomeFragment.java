@@ -6,17 +6,27 @@
 package org.mozilla.focus.home;
 
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.RemoteException;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.v4.content.ContextCompat;
+import android.support.v4.view.PagerAdapter;
+import android.support.v4.view.ViewPager;
 import android.support.v7.widget.PopupMenu;
 import android.support.v7.widget.RecyclerView;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -24,6 +34,8 @@ import android.webkit.GeolocationPermissions;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.widget.TextView;
+
+import com.example.lchuang.activitypager.IPagerService;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -87,6 +99,73 @@ public class HomeFragment extends LocaleAwareFragment implements TopSitesContrac
     }
 
     @Override
+    public void onActivityCreated(@Nullable Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+        final Activity activity = getActivity();
+        if (activity == null) {
+            return;
+        }
+
+        Intent pagerIntent = new Intent("com.example.lchuang.activitypager.PagerService");
+        pagerIntent.setPackage("com.example.lchuang.activitypager");
+        activity.bindService(pagerIntent, new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder binder) {
+                Log.d("roger_tag", "connected!");
+                hasLeftContent = true;
+                try {
+                    final IPagerService service = IPagerService.Stub.asInterface((IBinder) binder);
+                    service.attachWindow(activity.getWindow().getAttributes());
+
+                    pager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+                        @Override
+                        public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
+                            Log.d("roger_tag", "position: " + position + ", piex.: " + positionOffsetPixels);
+                            if (position != 1) {
+                                try {
+                                    service.scrollTo(-positionOffsetPixels);
+                                } catch (RemoteException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void onPageSelected(int position) {
+
+                        }
+
+                        @Override
+                        public void onPageScrollStateChanged(int state) {
+                            if (state == ViewPager.SCROLL_STATE_IDLE) {
+                                try {
+                                    service.stopScroll();
+                                } catch (RemoteException e) {
+                                    e.printStackTrace();
+                                }
+                            } else if (state == ViewPager.SCROLL_STATE_DRAGGING || state == ViewPager.SCROLL_STATE_SETTLING) {
+                                try {
+                                    service.startScroll();
+                                } catch (RemoteException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        }
+                    });
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+                pager.setCurrentItem(1);
+                hasLeftContent = false;
+            }
+        }, Context.BIND_AUTO_CREATE);
+    }
+
+    @Override
     public View onCreateView(@NonNull LayoutInflater inflater,
                              @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
@@ -130,8 +209,81 @@ public class HomeFragment extends LocaleAwareFragment implements TopSitesContrac
             }
         });
 
-        return view;
+        pager = new ViewPager(inflater.getContext()) {
+            @Override
+            public boolean onInterceptTouchEvent(MotionEvent ev) {
+                if (hasLeftContent) {
+                    return super.onInterceptTouchEvent(ev);
+                }
+                return false;
+            }
+
+            @Override
+            public boolean onTouchEvent(MotionEvent ev) {
+                if (hasLeftContent) {
+                    return super.onTouchEvent(ev);
+                }
+                return false;
+            }
+        };
+        contentView = view;
+
+        pager.setAdapter(new BackForwardAdapter(contentView));
+        pager.setCurrentItem(1);
+
+        return pager;
     }
+
+    private boolean hasLeftContent = false;
+
+    private static class BackForwardAdapter extends PagerAdapter {
+        private View prev;
+        private View current;
+
+        BackForwardAdapter(View childView) {
+            current = childView;
+        }
+
+
+        @Override
+        public int getCount() {
+            return 2;
+        }
+
+        @Override
+        public boolean isViewFromObject(@NonNull View view, @NonNull Object object) {
+            return view == object;
+        }
+
+        @NonNull
+        @Override
+        public Object instantiateItem(@NonNull ViewGroup container, int position) {
+            if (position == 0) {
+                if (prev == null) {
+                    //prev = new View(container.getContext());
+                    prev = new HomeScreenBackground(container.getContext());
+                    prev.setBackground(ContextCompat.getDrawable(container.getContext(), R.drawable.bg_homescreen_color));
+                }
+                container.addView(prev);
+                return prev;
+            } else {
+                container.addView(current);
+                return current;
+            }
+        }
+
+        @Override
+        public void destroyItem(@NonNull ViewGroup container, int position, @NonNull Object object) {
+            if (position == 0) {
+                container.removeView(prev);
+            } else if (position == 1) {
+                container.removeView(current);
+            }
+        }
+    }
+
+    private ViewPager pager;
+    private View contentView;
 
     @Override
     public void onResume() {
