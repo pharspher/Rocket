@@ -38,7 +38,9 @@
             android:launchMode="singleTask"
             android:exported="false" />
 
-        <activity android:name="org.mozilla.rocket.component.RocketLauncherActivity" />
+        <activity
+            android:name="org.mozilla.rocket.component.RocketLauncherActivity"
+            android:theme="@style/TransparentTheme"/>
 
         <activity-alias
             android:name="org.mozilla.rocket.activity.MainActivity"
